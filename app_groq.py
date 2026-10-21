@@ -311,7 +311,17 @@ if st.session_state.get("nav", "Top Docs Home") == "Top Docs Home":
     .block-container{max-width:1450px!important;padding:0 0 4.5rem!important}
     [data-testid="stSidebar"]{display:none!important}
     header[data-testid="stHeader"]{background:transparent!important}
+    html{scroll-behavior:smooth;scroll-padding-top:24px}
     .td-wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+    .td-hero,.td-institutes,.td-specialties,.td-faq,.td-showcase{scroll-margin-top:24px}
+    .td-specialties{padding:52px 0;background:#f2f5f0;border-top:1px solid var(--td-line);border-bottom:1px solid var(--td-line)}
+    .td-specialty-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-top:24px}
+    .td-specialty{display:block;background:#fff;border:1px solid var(--td-line);border-radius:14px;padding:18px 12px;text-align:center;color:var(--td-ink)!important;text-decoration:none!important;font-size:13px;font-weight:800;transition:transform .18s ease,box-shadow .18s ease}
+    .td-specialty:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(23,59,52,.09)}
+    .td-faq{padding:48px 0 24px}
+    .td-faq-item{padding:18px 0;border-bottom:1px solid var(--td-line);color:#49655d;font-size:13px;line-height:1.65}
+    .td-faq-item strong{display:block;color:var(--td-ink);font-size:14px;margin-bottom:5px}
+    @media(max-width:700px){.td-specialty-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
     .td-nav{height:86px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--td-line)}
     .td-brand{display:flex;align-items:center;gap:12px;color:var(--td-ink);font-weight:800;font-size:22px;letter-spacing:-.04em}
     .td-logo{width:54px;height:54px;background:#fff;border-radius:8px;display:flex;align-items:center;justify-content:center;border:1px solid #ece8df;box-shadow:0 6px 20px rgba(40,50,45,.04);overflow:hidden}
@@ -1314,10 +1324,8 @@ except Exception:
     assistant_requested = False
 if assistant_requested:
     st.session_state["nav"] = "AI Assistant"
-    try:
-        del st.query_params["assistant"]
-    except Exception:
-        pass
+    st.query_params.clear()
+    st.rerun()
 
 nav = st.session_state.get("nav", "Top Docs Home")
 
@@ -1434,7 +1442,20 @@ if nav == "Top Docs Home":
           </div>
         </div>
 
-        <section class="td-institutes" id="specialties">
+        <section class="td-specialties" id="specialties">
+          <div class="td-wrap">
+            <div class="td-institutes-title">Explore specialist care</div>
+            <div class="td-specialty-grid">
+              <a class="td-specialty" href="?assistant=1">Gynaecology</a>
+              <a class="td-specialty" href="?assistant=1">Gastroenterology</a>
+              <a class="td-specialty" href="?assistant=1">Cardiology</a>
+              <a class="td-specialty" href="?assistant=1">Neurology</a>
+              <a class="td-specialty" href="?assistant=1">General Medicine</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="td-institutes" id="institutes">
           <div class="td-wrap">
             <div class="td-institutes-title">Doctors trained at leading medical institutes</div>
             <div class="td-logos">
@@ -1444,7 +1465,17 @@ if nav == "Top Docs Home":
               <div class="td-inst"><div class="td-inst-mark">◌</div>JIPMER</div>
               <div class="td-inst"><div class="td-inst-mark">◎</div>CMC Vellore</div>
             </div>
-            <div class="td-footer-note" id="questions">Institute names describe where doctors trained. They do not mean the institutes employ, partner with or endorse Top Docs.</div>
+            <div class="td-footer-note">Institute names describe where doctors trained. They do not mean the institutes employ, partner with or endorse Top Docs.</div>
+          </div>
+        </section>
+
+        <section class="td-faq" id="questions">
+          <div class="td-wrap">
+            <div class="td-institutes-title">Questions, answered</div>
+            <div class="td-faq-item"><strong>How do I find the right specialist?</strong>Click “Find my specialist” or choose a specialty above to open the MediAgent assistant.</div>
+            <div class="td-faq-item"><strong>Are the doctor profiles and availability live?</strong>This academic demo uses illustrative doctor profiles and availability; it does not confirm real appointments.</div>
+            <div class="td-faq-item"><strong>Can the assistant diagnose or prescribe?</strong>No. It provides general information and helps route requests; medical decisions should be discussed with a qualified healthcare professional.</div>
+            <div class="td-footer-note">Demo / academic system. Doctor data, availability, and responses are illustrative.</div>
           </div>
         </section>
 
