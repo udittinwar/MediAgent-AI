@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+healthcare.db
+*.db
+.DS_Store

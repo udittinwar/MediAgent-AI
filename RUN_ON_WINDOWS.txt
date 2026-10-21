@@ -1,0 +1,19 @@
+MediAgent AI — run the supplied UI version
+
+1. Extract this ZIP and open the extracted folder in VS Code.
+2. In PowerShell, from the folder containing app_groq.py, run:
+
+   py -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -r requirements_groq.txt
+
+3. Set your Groq key in the same terminal (replace the placeholder):
+
+   $env:LLM_PROVIDER="groq"
+   $env:GROQ_API_KEY="YOUR_REAL_GROQ_API_KEY"
+   $env:GROQ_MODEL="openai/gpt-oss-20b"
+
+4. Start the app:
+
+   .\.venv\Scripts\python.exe -m streamlit run app_groq.py
+
+Keep the API key private. The ZIP excludes .env, virtual environments, and database files.
