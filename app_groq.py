@@ -15,6 +15,12 @@ import streamlit as st
 import textwrap
 
 try:
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+except ImportError:
+    pass
+
+try:
     from pypdf import PdfReader
 except Exception:
     PdfReader = None
@@ -615,11 +621,21 @@ def llm_chat(
 
     except requests.exceptions.ConnectionError:
         provider = "Groq" if LLM_PROVIDER == "groq" else "Ollama"
-        return f"{fallback}\n\n_{provider} connection failed. The fallback response is shown._"
+        return f"{fallback}\n\n_{provider} connection failed. Check your internet/service connection._"
     except requests.exceptions.Timeout:
         return fallback + "\n\n_AI service timed out. The fallback response is shown._"
+    except requests.exceptions.HTTPError as exc:
+        status = exc.response.status_code if exc.response is not None else "unknown"
+        detail = ""
+        if exc.response is not None:
+            try:
+                raw_detail = exc.response.text[:500]
+                detail = raw_detail.replace(GROQ_API_KEY, "[REDACTED]") if GROQ_API_KEY else raw_detail
+            except Exception:
+                detail = ""
+        suffix = f" HTTP {status}" + (f": {detail}" if detail else "")
+        return fallback + f"\n\n_AI service rejected the request{suffix}. Check API key, model name, and account limits._"
     except requests.exceptions.RequestException as exc:
-        # Never expose API keys; only show a compact error class/message.
         return fallback + f"\n\n_AI service request failed: {type(exc).__name__}._"
 
 
@@ -1618,7 +1634,8 @@ elif nav == "AI Assistant":
         user_prompt = user_prompt.strip()
         st.session_state["chat_messages"].append({"role": "user", "content": user_prompt})
 
-        result = SUPERVISOR.run(user_prompt)
+        with st.spinner("MediAgent is analyzing your request and preparing a response..."):
+            result = SUPERVISOR.run(user_prompt)
 
         st.session_state["chat_messages"].append(
             {
@@ -1657,7 +1674,8 @@ elif nav == "Find a Doctor":
     if submitted:
         query = symptom_text.strip()
         specialty = None if selected == "Auto-detect" else selected
-        result = SUPERVISOR.doctor.run(query, specialty)
+        with st.spinner("Finding matching specialists..."):
+            result = SUPERVISOR.doctor.run(query, specialty)
         st.session_state["doctor_result"] = result.as_dict()
         st.session_state["routed_result"] = result.as_dict()
 
@@ -1812,7 +1830,8 @@ elif nav == "Medical Reports":
         if not report_text.strip():
             st.warning("Upload a report or paste its text before analyzing.")
         else:
-            result = SUPERVISOR.report.run(report_text, title.strip() or "Medical Report")
+            with st.spinner("Analyzing the report and preparing a summary..."):
+                result = SUPERVISOR.report.run(report_text, title.strip() or "Medical Report")
             st.session_state["report_result"] = result.as_dict()
 
     if "report_result" in st.session_state:
@@ -1852,7 +1871,8 @@ elif nav == "Medication Info":
         if not medication.strip() or not question.strip():
             st.warning("Enter both the medication name and your question.")
         else:
-            result = SUPERVISOR.medication.run(medication.strip(), question.strip())
+            with st.spinner("Checking medication information and preparing a safe response..."):
+                result = SUPERVISOR.medication.run(medication.strip(), question.strip())
             st.session_state["med_result"] = result.as_dict()
 
     if "med_result" in st.session_state:
@@ -1884,7 +1904,8 @@ elif nav == "Symptom Triage":
         if not symptoms.strip():
             st.warning("Please describe your symptoms.")
         else:
-            result = SUPERVISOR.symptom.run(symptoms.strip(), duration.strip())
+            with st.spinner("Reviewing the symptoms and preparing urgency guidance..."):
+                result = SUPERVISOR.symptom.run(symptoms.strip(), duration.strip())
             st.session_state["symptom_result"] = result.as_dict()
 
             if result.page != "Symptom Triage":
@@ -1919,7 +1940,8 @@ elif nav == "Patient Education":
         if not topic.strip():
             st.warning("Enter a topic.")
         else:
-            result = SUPERVISOR.education.run(topic.strip(), question.strip())
+            with st.spinner("Preparing a patient-friendly explanation..."):
+                result = SUPERVISOR.education.run(topic.strip(), question.strip())
             st.session_state["education_result"] = result.as_dict()
 
     if "education_result" in st.session_state:
@@ -1998,7 +2020,8 @@ elif nav == "Follow-up":
         if not concern.strip():
             st.warning("Enter a follow-up concern.")
         else:
-            result = SUPERVISOR.followup.run(concern.strip())
+            with st.spinner("Generating follow-up guidance..."):
+                result = SUPERVISOR.followup.run(concern.strip())
             st.session_state["followup_result"] = result.as_dict()
 
     if "followup_result" in st.session_state:
@@ -2012,5 +2035,5 @@ elif nav == "Follow-up":
 st.divider()
 st.caption(
     f"{APP_TITLE} · {DEMO_DISCLAIMER} · "
-    f"LLM: {LLM_PROVIDER}/{GROQ_MODEL if LLM_PROVIDER == "groq" else OLLAMA_MODEL} · Database: {DB_PATH}"
+    f"LLM: {LLM_PROVIDER}/{GROQ_MODEL if LLM_PROVIDER == 'groq' else OLLAMA_MODEL} · Database: {DB_PATH}"
 )
