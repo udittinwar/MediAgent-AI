@@ -1,14 +1,20 @@
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 import base64
 from io import BytesIO
 import re
 import json
-import sqlite3
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterator, List, Optional, Tuple
+
+import psycopg
+from psycopg.rows import dict_row
+from psycopg.errors import UniqueViolation
 
 import requests
 import streamlit as st
@@ -26,7 +32,30 @@ except Exception:
 
 APP_TITLE = "MediAgent AI"
 APP_SUBTITLE = "Multi-Agent Healthcare Assistant"
-DB_PATH = os.getenv("HEALTHCARE_DB_PATH", "healthcare.db")
+DATABASE_URL = (
+    os.getenv("DATABASE_URL", "").strip()
+    or os.getenv("HEALTHCARE_DATABASE_URL", "").strip()
+)
+
+# Also support the DB_* variables used by the standalone database module.
+if not DATABASE_URL:
+    db_host = os.getenv("DB_HOST", "localhost")
+    db_port = os.getenv("DB_PORT", "5432")
+    db_name = os.getenv("DB_NAME", "mediagent")
+    db_user = os.getenv("DB_USER", "postgres")
+    db_password = os.getenv("DB_PASSWORD", "")
+    if db_password:
+        from urllib.parse import quote_plus
+        DATABASE_URL = (
+            f"postgresql://{quote_plus(db_user)}:{quote_plus(db_password)}"
+            f"@{db_host}:{db_port}/{db_name}"
+        )
+
+if not DATABASE_URL:
+    raise RuntimeError(
+        "PostgreSQL is not configured. Set DATABASE_URL or DB_PASSWORD "
+        "before starting Streamlit."
+    )
 
 # Cloud LLM (Groq) is the default because it is much faster for this demo.
 # Ollama remains as an optional local fallback.
@@ -382,103 +411,166 @@ if st.session_state.get("nav", "Top Docs Home") == "Top Docs Home":
 
 
 # ============================================================
-# DATABASE
+# DATABASE - POSTGRESQL
 # ============================================================
 
 @contextmanager
-def db_connect() -> Iterator[sqlite3.Connection]:
-    """Open a short-lived SQLite connection and always close it."""
-    conn = sqlite3.connect(DB_PATH, timeout=10, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
+def db_connect() -> Iterator[psycopg.Connection]:
+    """Open a short-lived PostgreSQL connection and always close it."""
+    conn = psycopg.connect(
+        DATABASE_URL,
+        connect_timeout=10,
+        row_factory=dict_row,
+    )
     try:
-        conn.execute("PRAGMA foreign_keys = ON")
-        conn.execute("PRAGMA journal_mode = WAL")
         yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
 
-def init_db() -> None:
+def seed_demo_doctors() -> None:
+    """Seed the demo doctor directory into the migration-managed schema.
+
+    The database structure itself is created only by migrations/001_initial_schema.sql.
+    This function only inserts the demo data required by the UI.
+    """
+    with db_connect() as conn:
+        for doctor in DOCTORS:
+            specialty_row = conn.execute(
+                "SELECT id FROM specialties WHERE name = %s",
+                (doctor["specialty"],),
+            ).fetchone()
+
+            if specialty_row:
+                specialty_id = specialty_row["id"]
+            else:
+                specialty_row = conn.execute(
+                    "INSERT INTO specialties(name) VALUES (%s) RETURNING id",
+                    (doctor["specialty"],),
+                ).fetchone()
+                specialty_id = specialty_row["id"]
+
+            existing = conn.execute(
+                "SELECT id FROM doctors WHERE name = %s LIMIT 1",
+                (doctor["name"],),
+            ).fetchone()
+
+            if not existing:
+                conn.execute(
+                    """
+                    INSERT INTO doctors(name, email, specialty_id)
+                    VALUES (%s, %s, %s)
+                    """,
+                    (
+                        doctor["name"],
+                        f"{doctor['name'].lower().replace('dr. ', '').replace(' ', '.')}@mediagent.local",
+                        specialty_id,
+                    ),
+                )
+
+
+def get_or_create_patient(full_name: str) -> int:
+    """Resolve a patient through users -> patients in the migration schema."""
+    name = full_name.strip()
+    if not name:
+        raise ValueError("Patient name is required.")
+
+    with db_connect() as conn:
+        user = conn.execute(
+            """
+            SELECT id FROM users
+            WHERE LOWER(name) = LOWER(%s)
+            ORDER BY id
+            LIMIT 1
+            """,
+            (name,),
+        ).fetchone()
+
+        if user:
+            user_id = user["id"]
+        else:
+            email = f"{name.lower().replace(' ', '.')}@mediagent.local"
+            user = conn.execute(
+                """
+                INSERT INTO users(name, email)
+                VALUES (%s, %s)
+                ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name
+                RETURNING id
+                """,
+                (name, email),
+            ).fetchone()
+            user_id = user["id"]
+
+        patient = conn.execute(
+            "SELECT id FROM patients WHERE user_id = %s LIMIT 1",
+            (user_id,),
+        ).fetchone()
+
+        if patient:
+            return int(patient["id"])
+
+        patient = conn.execute(
+            "INSERT INTO patients(user_id) VALUES (%s) RETURNING id",
+            (user_id,),
+        ).fetchone()
+        return int(patient["id"])
+
+
+def get_doctor_id(doctor_name: str) -> int:
+    with db_connect() as conn:
+        row = conn.execute(
+            "SELECT id FROM doctors WHERE name = %s",
+            (doctor_name,),
+        ).fetchone()
+        if not row:
+            raise ValueError(
+                f"Doctor '{doctor_name}' is not available in the demo directory."
+            )
+        return int(row["id"])
+
+
+def insert_interaction(
+    task: str,
+    agent: str,
+    user_input: str,
+    response: str,
+    patient_id: Optional[int] = None,
+) -> None:
     with db_connect() as conn:
         conn.execute(
             """
-            CREATE TABLE IF NOT EXISTS appointments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                patient TEXT NOT NULL,
-                doctor TEXT NOT NULL,
-                appointment_date TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'Booked',
-                created_at TEXT NOT NULL
+            INSERT INTO interactions(
+                patient_id, task, agent, user_input, response, created_at
             )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS tickets (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                patient TEXT NOT NULL,
-                issue TEXT NOT NULL,
-                priority TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'Open',
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS reports (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                report_text TEXT NOT NULL,
-                summary TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS interactions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                task TEXT NOT NULL,
-                agent TEXT NOT NULL,
-                user_input TEXT NOT NULL,
-                response TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-            """
-        )
-        conn.commit()
-
-
-init_db()
-
-
-def insert_interaction(task: str, agent: str, user_input: str, response: str) -> None:
-    with db_connect() as conn:
-        conn.execute(
-            """
-            INSERT INTO interactions(task, agent, user_input, response, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, NOW())
             """,
             (
+                patient_id,
                 task,
                 agent,
                 user_input[:5000],
                 response[:10000],
-                datetime.now().isoformat(timespec="seconds"),
             ),
         )
-        conn.commit()
 
 
-def get_scalar(query: str) -> int:
+def get_scalar(query: str, params: Tuple[Any, ...] = ()) -> int:
     with db_connect() as conn:
-        row = conn.execute(query).fetchone()
-        return int(row[0] or 0)
+        row = conn.execute(query, params).fetchone()
+        if not row:
+            return 0
+        value = next(iter(row.values()))
+        return int(value or 0)
 
 
-def fetch_rows(query: str, params: Tuple[Any, ...] = ()) -> List[sqlite3.Row]:
+def fetch_rows(
+    query: str,
+    params: Tuple[Any, ...] = (),
+) -> List[Dict[str, Any]]:
     with db_connect() as conn:
         return list(conn.execute(query, params).fetchall())
 
@@ -498,6 +590,11 @@ DOCTORS = [
 
 def specialties() -> List[str]:
     return sorted({d["specialty"] for d in DOCTORS})
+
+
+seed_demo_doctors()
+
+
 
 
 # ============================================================
@@ -871,44 +968,70 @@ class DoctorRecommendationAgent(BaseAgent):
 class AppointmentAgent(BaseAgent):
     name = "Appointment Agent"
 
-    def book(self, patient: str, doctor: str, appointment_date: date, reason: str) -> int:
-        with db_connect() as conn:
-            cur = conn.execute(
-                """
-                INSERT INTO appointments(patient, doctor, appointment_date, reason, status, created_at)
-                VALUES (?, ?, ?, ?, 'Booked', ?)
-                """,
-                (
-                    patient,
-                    doctor,
-                    appointment_date.isoformat(),
-                    reason,
-                    datetime.now().isoformat(timespec="seconds"),
-                ),
-            )
-            conn.commit()
-            return int(cur.lastrowid)
+    def book(
+        self,
+        patient: str,
+        doctor: str,
+        appointment_date: date,
+        reason: str,
+    ) -> int:
+        patient_id = get_or_create_patient(patient)
+        doctor_id = get_doctor_id(doctor)
+
+        try:
+            with db_connect() as conn:
+                row = conn.execute(
+                    """
+                    INSERT INTO appointments(
+                        patient_id, doctor_id, appointment_date, reason, status, created_at
+                    )
+                    VALUES (%s, %s, %s, %s, 'scheduled', NOW())
+                    RETURNING id
+                    """,
+                    (
+                        patient_id,
+                        doctor_id,
+                        appointment_date,
+                        reason,
+                    ),
+                ).fetchone()
+                return int(row["id"])
+        except UniqueViolation as exc:
+            raise ValueError(
+                f"{doctor} already has an active appointment on "
+                f"{appointment_date.isoformat()}. Please choose another date."
+            ) from exc
 
     def reschedule(self, appointment_id: int, new_date: date) -> bool:
-        with db_connect() as conn:
-            cur = conn.execute(
-                """
-                UPDATE appointments
-                SET appointment_date = ?, status = 'Rescheduled'
-                WHERE id = ? AND status NOT IN ('Cancelled')
-                """,
-                (new_date.isoformat(), appointment_id),
-            )
-            conn.commit()
-            return cur.rowcount > 0
+        try:
+            with db_connect() as conn:
+                cur = conn.execute(
+                    """
+                    UPDATE appointments
+                    SET appointment_date = %s,
+                        status = 'rescheduled'
+                    WHERE id = %s
+                      AND status <> 'cancelled'
+                    """,
+                    (new_date, appointment_id),
+                )
+                return cur.rowcount > 0
+        except UniqueViolation as exc:
+            raise ValueError(
+                f"The doctor already has an active appointment on "
+                f"{new_date.isoformat()}."
+            ) from exc
 
     def cancel(self, appointment_id: int) -> bool:
         with db_connect() as conn:
             cur = conn.execute(
-                "UPDATE appointments SET status='Cancelled' WHERE id=?",
+                """
+                UPDATE appointments
+                SET status = 'cancelled'
+                WHERE id = %s
+                """,
                 (appointment_id,),
             )
-            conn.commit()
             return cur.rowcount > 0
 
     def run(self, query: str) -> AgentResult:
@@ -926,7 +1049,12 @@ class AppointmentAgent(BaseAgent):
 class MedicalReportAgent(BaseAgent):
     name = "Medical Report Analysis Agent"
 
-    def run(self, report_text: str, title: str = "Medical Report") -> AgentResult:
+    def run(
+        self,
+        report_text: str,
+        title: str = "Medical Report",
+        patient_name: str = "Demo Patient",
+    ) -> AgentResult:
         if not report_text.strip():
             return AgentResult(
                 task="Medical report summarization",
@@ -952,28 +1080,36 @@ Do not provide medication doses or personalized treatment instructions.
         response = llm_chat(system, user, fallback)
         response, status, issues = ClinicalSafetyReviewerAgent.sanitize(response)
 
+        patient_id = get_or_create_patient(patient_name)
+
         with db_connect() as conn:
-            cur = conn.execute(
+            row = conn.execute(
                 """
-                INSERT INTO reports(title, report_text, summary, created_at)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO medical_reports(
+                    patient_id, title, report_text, summary, created_at
+                )
+                VALUES (%s, %s, %s, %s, NOW())
+                RETURNING id
                 """,
                 (
+                    patient_id,
                     title[:200],
                     report_text[:20000],
                     response[:15000],
-                    datetime.now().isoformat(timespec="seconds"),
                 ),
-            )
-            conn.commit()
-            report_id = int(cur.lastrowid)
+            ).fetchone()
+            report_id = int(row["id"])
 
         return AgentResult(
             task="Medical report summarization",
             agent=self.name,
             response=response,
             page="Medical Reports",
-            data={"report_id": report_id, "title": title},
+            data={
+                "report_id": report_id,
+                "title": title,
+                "patient_id": patient_id,
+            },
             safety_status=status,
             safety_notes=issues,
         )
@@ -1046,28 +1182,27 @@ class CustomerSupportAgent(BaseAgent):
         high = ["payment failed", "payment issue", "refund", "unable to book", "account locked"]
         medium = ["delay", "problem", "issue", "complaint"]
         if any(x in q for x in high):
-            return "High"
+            return "high"
         if any(x in q for x in medium):
-            return "Medium"
-        return "Low"
+            return "normal"
+        return "low"
 
     def create_ticket(self, patient: str, issue: str) -> Tuple[int, str]:
         priority = self.priority(issue)
+        patient_id = get_or_create_patient(patient)
+
         with db_connect() as conn:
-            cur = conn.execute(
+            row = conn.execute(
                 """
-                INSERT INTO tickets(patient, issue, priority, status, created_at)
-                VALUES (?, ?, ?, 'Open', ?)
+                INSERT INTO support_tickets(
+                    patient_id, issue, priority, status, created_at
+                )
+                VALUES (%s, %s, %s, 'open', NOW())
+                RETURNING id
                 """,
-                (
-                    patient,
-                    issue,
-                    priority,
-                    datetime.now().isoformat(timespec="seconds"),
-                ),
-            )
-            conn.commit()
-            return int(cur.lastrowid), priority
+                (patient_id, issue, priority),
+            ).fetchone()
+            return int(row["id"]), priority
 
     def run(self, query: str) -> AgentResult:
         return AgentResult(
@@ -1492,8 +1627,8 @@ if nav == "Dashboard":
 
     cols = st.columns(4, gap="medium")
     with cols[0]: metric_card("Appointments", get_scalar("SELECT COUNT(*) FROM appointments"))
-    with cols[1]: metric_card("Open Tickets", get_scalar("SELECT COUNT(*) FROM tickets WHERE status='Open'"))
-    with cols[2]: metric_card("Saved Reports", get_scalar("SELECT COUNT(*) FROM reports"))
+    with cols[1]: metric_card("Open Tickets", get_scalar("SELECT COUNT(*) FROM support_tickets WHERE status='open'"))
+    with cols[2]: metric_card("Saved Reports", get_scalar("SELECT COUNT(*) FROM medical_reports"))
     with cols[3]: metric_card("AI Interactions", get_scalar("SELECT COUNT(*) FROM interactions"))
 
     st.markdown("<div class='section-title'>How the system works</div>", unsafe_allow_html=True)
@@ -1666,19 +1801,48 @@ elif nav == "Appointments":
             if not patient.strip() or not reason.strip():
                 st.warning("Please fill in patient name and reason.")
             else:
-                appointment_id = SUPERVISOR.appointment.book(
-                    patient.strip(),
-                    doctor,
-                    appt_date,
-                    reason.strip(),
-                )
-                response = f"Appointment **#{appointment_id}** created for **{patient.strip()}** with **{doctor}** on **{appt_date.isoformat()}**."
-                st.success(response)
-                insert_interaction("Appointment booking", SUPERVISOR.appointment.name, reason, response)
+                try:
+                    appointment_id = SUPERVISOR.appointment.book(
+                        patient.strip(),
+                        doctor,
+                        appt_date,
+                        reason.strip(),
+                    )
+                    response = (
+                        f"Appointment **#{appointment_id}** created for **{patient.strip()}** "
+                        f"with **{doctor}** on **{appt_date.isoformat()}**."
+                    )
+                    st.success(response)
+                    patient_id = get_or_create_patient(patient.strip())
+                    insert_interaction(
+                        "Appointment booking",
+                        SUPERVISOR.appointment.name,
+                        reason,
+                        response,
+                        patient_id=patient_id,
+                    )
+                except ValueError as exc:
+                    st.error(str(exc))
+                except psycopg.Error as exc:
+                    st.error(
+                        f"Database error while creating the appointment: {type(exc).__name__}."
+                    )
 
     elif action == "Reschedule":
         rows = fetch_rows(
-            "SELECT id, patient, doctor, appointment_date, status FROM appointments WHERE status != 'Cancelled' ORDER BY id DESC"
+            """
+            SELECT a.id,
+                   u.name AS patient,
+                   d.name AS doctor,
+                   a.appointment_date,
+                   a.status
+            FROM appointments a
+            JOIN patients p ON p.id = a.patient_id
+            JOIN users u ON u.id = p.user_id
+            JOIN doctors d ON d.id = a.doctor_id
+            WHERE a.status <> 'cancelled'
+            ORDER BY a.id DESC
+            """
         )
         if not rows:
             st.info("No active appointments to reschedule.")
@@ -1694,15 +1858,36 @@ elif nav == "Appointments":
             )
             new_date = st.date_input("New date", min_value=date.today())
             if st.button("Reschedule appointment", type="primary"):
-                ok = SUPERVISOR.appointment.reschedule(int(appointment_id), new_date)
-                if ok:
-                    st.success(f"Appointment #{appointment_id} rescheduled to {new_date.isoformat()}.")
-                else:
-                    st.error("Unable to reschedule this appointment.")
+                try:
+                    ok = SUPERVISOR.appointment.reschedule(int(appointment_id), new_date)
+                    if ok:
+                        st.success(
+                            f"Appointment #{appointment_id} rescheduled to {new_date.isoformat()}."
+                        )
+                    else:
+                        st.error("Unable to reschedule this appointment.")
+                except ValueError as exc:
+                    st.error(str(exc))
+                except psycopg.Error as exc:
+                    st.error(
+                        f"Database error while rescheduling: {type(exc).__name__}."
+                    )
 
     else:
         rows = fetch_rows(
-            "SELECT id, patient, doctor, appointment_date, status FROM appointments WHERE status != 'Cancelled' ORDER BY id DESC"
+            """
+            SELECT a.id,
+                   u.name AS patient,
+                   d.name AS doctor,
+                   a.appointment_date,
+                   a.status
+            FROM appointments a
+            JOIN patients p ON p.id = a.patient_id
+            JOIN users u ON u.id = p.user_id
+            JOIN doctors d ON d.id = a.doctor_id
+            WHERE a.status <> 'cancelled'
+            ORDER BY a.id DESC
+            """
         )
         if not rows:
             st.info("No active appointments to cancel.")
@@ -1726,8 +1911,18 @@ elif nav == "Appointments":
     st.markdown("### Appointment Records")
     rows = fetch_rows(
         """
-        SELECT id, patient, doctor, appointment_date, reason, status, created_at
-        FROM appointments ORDER BY id DESC
+        SELECT a.id,
+               u.name AS patient,
+               d.name AS doctor,
+               a.appointment_date,
+               a.reason,
+               a.status,
+               a.created_at
+        FROM appointments a
+        JOIN patients p ON p.id = a.patient_id
+        JOIN users u ON u.id = p.user_id
+        JOIN doctors d ON d.id = a.doctor_id
+        ORDER BY a.id DESC
         """
     )
     if rows:
@@ -1748,6 +1943,7 @@ elif nav == "Medical Reports":
 
     show_last_route("Medical Reports")
 
+    patient_name = st.text_input("Patient name", value="Demo Patient")
     title = st.text_input("Report title", value="Medical Report")
     uploaded = st.file_uploader(
         "Upload a TXT or PDF report",
@@ -1781,7 +1977,11 @@ elif nav == "Medical Reports":
         if not report_text.strip():
             st.warning("Upload a report or paste its text before analyzing.")
         else:
-            result = SUPERVISOR.report.run(report_text, title.strip() or "Medical Report")
+            result = SUPERVISOR.report.run(
+                report_text,
+                title.strip() or "Medical Report",
+                patient_name.strip() or "Demo Patient",
+            )
             st.session_state["report_result"] = result.as_dict()
 
     if "report_result" in st.session_state:
@@ -1789,7 +1989,14 @@ elif nav == "Medical Reports":
 
     st.markdown("### Saved Reports")
     rows = fetch_rows(
-        "SELECT id, title, created_at FROM reports ORDER BY id DESC LIMIT 10"
+        """
+        SELECT r.id, u.name AS patient, r.title, r.created_at
+        FROM medical_reports r
+        JOIN patients p ON p.id = r.patient_id
+         JOIN users u ON u.id = p.user_id
+        ORDER BY r.id DESC
+        LIMIT 10
+        """
     )
     if rows:
         st.dataframe([dict(r) for r in rows], use_container_width=True, hide_index=True)
@@ -1925,16 +2132,31 @@ elif nav == "Support":
             )
             response = (
                 f"Ticket **#{ticket_id}** created successfully. "
-                f"Priority: **{priority}**. Status: **Open**."
+                f"Priority: **{priority}**. Status: **open**."
             )
             st.success(response)
-            insert_interaction("Customer support", SUPERVISOR.support.name, issue, response)
+            patient_id = get_or_create_patient(patient.strip())
+            insert_interaction(
+                "Customer support",
+                SUPERVISOR.support.name,
+                issue,
+                response,
+                patient_id=patient_id,
+            )
 
     st.markdown("### Ticket Records")
     rows = fetch_rows(
         """
-        SELECT id, patient, issue, priority, status, created_at
-        FROM tickets ORDER BY id DESC
+        SELECT t.id,
+               u.name AS patient,
+               t.issue,
+               t.priority,
+               t.status,
+               t.created_at
+        FROM support_tickets t
+        JOIN patients p ON p.id = t.patient_id
+         JOIN users u ON u.id = p.user_id
+        ORDER BY t.id DESC
         """
     )
     if rows:
@@ -1981,5 +2203,5 @@ elif nav == "Follow-up":
 st.divider()
 st.caption(
     f"{APP_TITLE} · {DEMO_DISCLAIMER} · "
-    f"LLM: {LLM_PROVIDER}/{GROQ_MODEL if LLM_PROVIDER == "groq" else OLLAMA_MODEL} · Database: {DB_PATH}"
+    f"LLM: {LLM_PROVIDER}/{GROQ_MODEL if LLM_PROVIDER == 'groq' else OLLAMA_MODEL} · Database: PostgreSQL"
 )
