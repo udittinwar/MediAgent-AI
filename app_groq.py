@@ -673,13 +673,13 @@ class ClinicalSafetyReviewerAgent(BaseAgent):
     @classmethod
     def sanitize(cls, text: str) -> Tuple[str, str, List[str]]:
         status, issues = cls.review(text)
-        safe_footer = (
-            "\n\n**Safety note:** This is general information, not a diagnosis or prescription. "
-            "For personal medical decisions, consult a qualified healthcare professional."
-        )
         if status == "NEEDS_REVISION":
-            cleaned = text + safe_footer
-            return cleaned, status, issues
+            safe_message = (
+                "I can't provide that specific medical instruction or definitive diagnosis. "
+                "Please consult a qualified healthcare professional for personalized guidance. "
+                "If you may be experiencing a medical emergency, contact local emergency services now."
+            )
+            return safe_message, status, issues
         return text, "PASS", []
 
 
@@ -1141,6 +1141,12 @@ class SupervisorAgent(BaseAgent):
             return "report"
 
         if any(x in q for x in [
+            "follow up", "follow-up", "next step", "after my appointment",
+            "after visit", "what should i ask", "what should i monitor",
+        ]):
+            return "followup"
+
+        if any(x in q for x in [
             "book appointment", "schedule appointment", "reschedule",
             "cancel appointment", "appointment",
         ]):
@@ -1176,11 +1182,6 @@ class SupervisorAgent(BaseAgent):
         ]):
             return "education"
 
-        if any(x in q for x in [
-            "follow up", "follow-up", "next step", "after my appointment",
-            "after visit", "what should i ask", "what should i monitor",
-        ]):
-            return "followup"
 
         return "patient"
 
