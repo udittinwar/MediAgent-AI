@@ -1,9 +1,22 @@
 import os
+from dotenv import load_dotenv
 import psycopg
 from psycopg.rows import dict_row
 
+# Load variables from .env
+load_dotenv()
+
 
 def get_connection():
+    database_url = os.getenv("DATABASE_URL")
+
+    if database_url:
+        return psycopg.connect(
+            database_url,
+            row_factory=dict_row,
+        )
+
+    # Fallback for environments that use separate DB variables
     return psycopg.connect(
         host=os.getenv("DB_HOST", "localhost"),
         port=os.getenv("DB_PORT", "5432"),
