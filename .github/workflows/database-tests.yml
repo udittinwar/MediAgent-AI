@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - feature/vishvesh-database
+
   pull_request:
     branches:
-      - feature/vishvesh-database
+      - main
 
 jobs:
   database-tests:
@@ -41,13 +42,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
       - name: Run database migration
         env:
           PGPASSWORD: postgres
         run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-          psql -h localhost -U postgres -d mediagent -f migrations/001_initial_schema.sql
+          psql \
+            -h localhost \
+            -U postgres \
+            -d mediagent \
+            -f migrations/001_initial_schema.sql
 
       - name: Run database tests
         env:
