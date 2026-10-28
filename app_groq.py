@@ -1,5 +1,8 @@
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 import base64
 from io import BytesIO
 import re
@@ -56,17 +59,17 @@ PAGES = [
 ]
 
 PAGE_ICONS = {
-    "Top Docs Home": "⌂",
-    "Dashboard": "◈",
-    "AI Assistant": "✦",
-    "Find a Doctor": "⌕",
-    "Appointments": "◷",
-    "Medical Reports": "▤",
-    "Medication Info": "Rx",
-    "Symptom Triage": "♥",
-    "Patient Education": "i",
-    "Support": "◇",
-    "Follow-up": "↻",
+    "Top Docs Home": "🏠",
+    "Dashboard": "📊",
+    "AI Assistant": "🤖",
+    "Find a Doctor": "🩺",
+    "Appointments": "📅",
+    "Medical Reports": "📄",
+    "Medication Info": "💊",
+    "Symptom Triage": "💗",
+    "Patient Education": "🎓",
+    "Support": "💬",
+    "Follow-up": "🔄",
 }
 
 
@@ -110,7 +113,7 @@ DEMO_DISCLAIMER = (
 
 st.set_page_config(
     page_title=APP_TITLE,
-    page_icon="✦",
+    page_icon="ÃƒÂ¢Ã…â€œÃ‚Â¦",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -161,8 +164,8 @@ html,body,[class*="css"]{font-family:"Inter",system-ui,-apple-system,BlinkMacSys
 .metric-number{font-size:29px;line-height:1;font-weight:800;color:var(--ink);letter-spacing:-.04em}
 .metric-label{margin-top:8px;font-size:11px;color:var(--muted);font-weight:600}
 .agent-badge,.safety-pass,.safety-revise{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:999px;font-size:11px;font-weight:800;margin:0 6px 8px 0}
-.agent-badge{background:var(--accent-soft);color:#2459c4;border:1px solid #dce8ff}.agent-badge:before{content:"✦"}
-.safety-pass{background:var(--success-soft);color:#137b4e;border:1px solid #d5f0e3}.safety-pass:before{content:"✓"}
+.agent-badge{background:var(--accent-soft);color:#2459c4;border:1px solid #dce8ff}.agent-badge:before{content:"ÃƒÂ¢Ã…â€œÃ‚Â¦"}
+.safety-pass{background:var(--success-soft);color:#137b4e;border:1px solid #d5f0e3}.safety-pass:before{content:"ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“"}
 .safety-revise{background:var(--warning-soft);color:#8a6100;border:1px solid #f2e3b5}.safety-revise:before{content:"!"}
 .route-card{background:linear-gradient(90deg,#f6faff,#fbfdff);border:1px solid #dbe8fb;border-radius:16px;padding:14px 16px;margin:6px 0 15px;color:#52657e;font-size:12px;line-height:1.5}
 .route-title{color:var(--ink);font-weight:800;font-size:12px;margin-bottom:3px}
@@ -306,7 +309,7 @@ st.markdown(
 if st.session_state.get("nav", "Top Docs Home") == "Top Docs Home":
     st.markdown("""
     <style>
-    :root{--td-ink:#173b34;--td-sage:#6d9688;--td-gold:#be9550;--td-paper:#f8f6f0;--td-line:#dedbd1} 
+    :root{--td-ink:#173b34;--td-sage:#6d9688;--td-gold:#be9550;--td-paper:#f8f6f0;--td-line:#dedbd1}
     .stApp{background:var(--td-paper)!important}
     .block-container{max-width:1450px!important;padding:0 0 4.5rem!important}
     [data-testid="stSidebar"]{display:none!important}
@@ -454,22 +457,29 @@ def init_db() -> None:
 init_db()
 
 
-def insert_interaction(task: str, agent: str, user_input: str, response: str) -> None:
+
+def insert_interaction(
+    task: str, agent: str, user_input: str, response: str
+) -> None:
+    """Store interaction metadata without retaining conversation content."""
     with db_connect() as conn:
         conn.execute(
             """
-            INSERT INTO interactions(task, agent, user_input, response, created_at)
+            INSERT INTO interactions(
+                task, agent, user_input, response, created_at
+            )
             VALUES (?, ?, ?, ?, ?)
             """,
             (
-                task,
-                agent,
-                user_input[:5000],
-                response[:10000],
+                task[:200],
+                agent[:200],
+                "[REDACTED]",
+                "[REDACTED]",
                 datetime.now().isoformat(timespec="seconds"),
             ),
         )
         conn.commit()
+
 
 
 def get_scalar(query: str) -> int:
@@ -508,7 +518,7 @@ def specialties() -> List[str]:
 def llm_status() -> Tuple[bool, str]:
     if LLM_PROVIDER == "groq":
         if not GROQ_API_KEY:
-            return False, "Groq selected · API key missing"
+            return False, "Groq selected Ãƒâ€šÃ‚Â· API key missing"
         try:
             r = requests.get(
                 f"{GROQ_BASE_URL}/models",
@@ -516,7 +526,7 @@ def llm_status() -> Tuple[bool, str]:
                 timeout=4,
             )
             r.raise_for_status()
-            return True, f"Groq connected · {GROQ_MODEL}"
+            return True, f"Groq connected Ãƒâ€šÃ‚Â· {GROQ_MODEL}"
         except Exception:
             return False, "Groq unavailable / invalid API key"
 
@@ -529,8 +539,8 @@ def llm_status() -> Tuple[bool, str]:
             OLLAMA_MODEL == m or OLLAMA_MODEL.split(":")[0] == m.split(":")[0]
             for m in models
         ):
-            return True, f"Ollama connected · {OLLAMA_MODEL}"
-        return True, f"Ollama connected · model not listed ({OLLAMA_MODEL})"
+            return True, f"Ollama connected Ãƒâ€šÃ‚Â· {OLLAMA_MODEL}"
+        return True, f"Ollama connected Ãƒâ€šÃ‚Â· model not listed ({OLLAMA_MODEL})"
     except Exception:
         return False, "Ollama unavailable"
 
@@ -603,14 +613,29 @@ def llm_chat(
         content = data.get("message", {}).get("content", "")
         return content.strip() if content else fallback
 
+
+
+
+
     except requests.exceptions.ConnectionError:
         provider = "Groq" if LLM_PROVIDER == "groq" else "Ollama"
-        return f"{fallback}\n\n_{provider} connection failed. The fallback response is shown._"
+        return (
+            f"{fallback}\n\n"
+            f"_{provider} connection failed. "
+            "The fallback response is shown._"
+        )
+
     except requests.exceptions.Timeout:
-        return fallback + "\n\n_AI service timed out. The fallback response is shown._"
-    except requests.exceptions.RequestException as exc:
-        # Never expose API keys; only show a compact error class/message.
-        return fallback + f"\n\n_AI service request failed: {type(exc).__name__}._"
+        return (
+            f"{fallback}\n\n"
+            "_AI service timed out. The fallback response is shown._"
+        )
+
+    except requests.exceptions.RequestException:
+        return (
+            f"{fallback}\n\n"
+            "_AI service request failed. The fallback response is shown._"
+        )
 
 
 # ============================================================
@@ -844,7 +869,7 @@ class DoctorRecommendationAgent(BaseAgent):
                 f"### Suggested specialty: {chosen}\n\n"
                 "The directory below is **demo data** for the academic project.\n\n"
                 + "\n".join(
-                    f"- **{d['name']}** · {d['specialty']} · {d['mode']} · {d['city']}"
+                    f"- **{d['name']}** Ãƒâ€šÃ‚Â· {d['specialty']} Ãƒâ€šÃ‚Â· {d['mode']} Ãƒâ€šÃ‚Â· {d['city']}"
                     for d in doctors
                 )
             )
@@ -960,7 +985,7 @@ Do not provide medication doses or personalized treatment instructions.
                 """,
                 (
                     title[:200],
-                    report_text[:20000],
+                    "[NOT STORED]",
                     response[:15000],
                     datetime.now().isoformat(timespec="seconds"),
                 ),
@@ -1185,32 +1210,82 @@ class SupervisorAgent(BaseAgent):
 
         return "patient"
 
+
     def run(self, query: str) -> AgentResult:
         route = self.route_task(query)
 
-        if route == "emergency":
-            result = self.emergency.run(query)
-        elif route == "report":
-            result = self.report.run("")
-        elif route == "appointment":
-            result = self.appointment.run(query)
-        elif route == "doctor":
-            result = self.doctor.run(query)
-        elif route == "medication":
-            medication = "Not specified"
-            result = self.medication.run(medication, query)
-        elif route == "support":
-            result = self.support.run(query)
-        elif route == "symptom":
-            result = self.symptom.run(query)
-        elif route == "education":
-            result = self.education.run(query)
-        elif route == "followup":
-            result = self.followup.run(query)
-        else:
-            result = self.patient.run(query)
+        try:
+            if route == "emergency":
+                result = self.emergency.run(query)
 
-        insert_interaction(result.task, result.agent, query, result.response)
+            elif route == "report":
+                result = AgentResult(
+                    task="Medical report analysis",
+                    agent="Medical Report Agent",
+                    response=(
+                        "I can help explain your medical report. Open the Medical Reports "
+                        "page and upload your report or paste its text to get it analyzed. "
+                        "The report content is not available in this chat message."
+                    ),
+                    page="Medical Reports",
+                )
+
+            elif route == "appointment":
+                result = self.appointment.run(query)
+            elif route == "doctor":
+                result = self.doctor.run(query)
+            elif route == "medication":
+                result = self.medication.run("Not specified", query)
+            elif route == "support":
+                result = self.support.run(query)
+            elif route == "symptom":
+                result = self.symptom.run(query)
+            elif route == "education":
+                result = self.education.run(query)
+            elif route == "followup":
+                result = self.followup.run(query)
+            else:
+                result = self.patient.run(query)
+
+            if not isinstance(result, AgentResult):
+                raise TypeError("Agent returned an invalid result")
+            # Review the final response before returning it to the user.
+            safe_response, review_status, review_issues = (
+                ClinicalSafetyReviewerAgent.sanitize(result.response)
+            )
+
+            if review_status == "NEEDS_REVISION":
+                result.response = safe_response
+                result.safety_status = "NEEDS_REVISION"
+                existing_notes = list(result.safety_notes or [])
+                result.safety_notes = existing_notes + review_issues
+
+        except Exception:
+            # Do not expose internal errors or fabricate medical advice.
+            result = AgentResult(
+                task=f"{route.title()} request",
+                agent=self.name,
+                response=(
+                    "I couldn't process your request right now. Please try again. "
+                    "If you may be experiencing a medical emergency, contact "
+                    "local emergency services immediately."
+                ),
+                page="AI Assistant",
+                data={"error_code": "AGENT_EXECUTION_FAILED"},
+                safety_status="ERROR",
+                safety_notes=[
+                    "The selected agent failed or returned an invalid result."
+                ],
+            )
+
+        try:
+            insert_interaction(
+                result.task, result.agent, query, result.response
+            )
+        except Exception:
+            # Logging failure must not discard the response.
+            print("Warning: interaction logging failed.")
+
         return result
 
 
@@ -1262,7 +1337,7 @@ def render_result(result: Dict[str, Any]) -> None:
     if result.get("safety_notes"):
         with st.expander("Safety reviewer notes"):
             for note in result["safety_notes"]:
-                st.write("• " + note)
+                st.write("ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¢ " + note)
 
 
 def show_last_route(page: str) -> None:
@@ -1342,7 +1417,7 @@ if st.session_state.get("nav") != "Top Docs Home":
         st.markdown(
             """
             <div class="brand-wrap">
-                <div class="brand-mark">✦</div>
+                <div class="brand-mark">ÃƒÂ¢Ã…â€œÃ‚Â¦</div>
                 <div>
                     <div class="brand-name">MediAgent AI</div>
                     <div class="brand-sub">Top Docs Assistant</div>
@@ -1357,7 +1432,7 @@ if st.session_state.get("nav") != "Top Docs Home":
             "Navigation",
             PAGES[1:],
             key="nav",
-            format_func=lambda p: f"{PAGE_ICONS.get(p, '•')}  {p}",
+            format_func=lambda p: f"{PAGE_ICONS.get(p, chr(8226))}  {p}",
             label_visibility="collapsed",
         )
 
@@ -1374,7 +1449,7 @@ if st.session_state.get("nav") != "Top Docs Home":
                     </div>
                 </div>
                 <div class="status-text">{provider_text}</div>
-                <div class="status-text" style="margin-top:8px;">10 specialist tasks · Supervisor · Safety Reviewer</div>
+                <div class="status-text" style="margin-top:8px;">10 specialist tasks Ãƒâ€šÃ‚Â· Supervisor Ãƒâ€šÃ‚Â· Safety Reviewer</div>
             </div>
             """,
             unsafe_allow_html=True,
@@ -1408,7 +1483,7 @@ if nav == "Top Docs Home":
               <div class="td-eyebrow">Online specialist consultations and second opinions</div>
               <h1 class="td-title">India's top<br>doctors,<br><em>now within<br>reach.</em></h1>
               <div class="td-copy">Get a specialist consultation from doctors trained at leading medical institutes.</div>
-              <a class="td-main-cta" href="?assistant=1">Find my specialist <span class="arrow">→</span></a>
+              <a class="td-main-cta" href="?assistant=1">Find my specialist <span class="arrow">â†’?</span></a>
               <div class="td-bullets">
                 <div class="td-bullet"><i></i><span>Transparent fee before checkout</span></div>
                 <div class="td-bullet"><i></i><span>Consultation timing coordinated on WhatsApp</span></div>
@@ -1439,20 +1514,20 @@ if nav == "Top Docs Home":
           <div class="td-wrap">
             <div class="td-institutes-title">Doctors trained at leading medical institutes</div>
             <div class="td-logos">
-              <div class="td-inst"><div class="td-inst-mark">◉</div>AIIMS</div>
-              <div class="td-inst"><div class="td-inst-mark">◍</div>PGIMER</div>
-              <div class="td-inst"><div class="td-inst-mark">◆</div>Tata Memorial</div>
-              <div class="td-inst"><div class="td-inst-mark">◌</div>JIPMER</div>
-              <div class="td-inst"><div class="td-inst-mark">◎</div>CMC Vellore</div>
+              <div class="td-inst"><div class="td-inst-mark">ÃƒÂ¢Ã¢â‚¬â€Ã¢â‚¬Â°</div>AIIMS</div>
+              <div class="td-inst"><div class="td-inst-mark">ÃƒÂ¢Ã¢â‚¬â€Ã‚Â</div>PGIMER</div>
+              <div class="td-inst"><div class="td-inst-mark">ÃƒÂ¢Ã¢â‚¬â€Ã¢â‚¬Â </div>Tata Memorial</div>
+              <div class="td-inst"><div class="td-inst-mark">ÃƒÂ¢Ã¢â‚¬â€Ã…â€™</div>JIPMER</div>
+              <div class="td-inst"><div class="td-inst-mark">ÃƒÂ¢Ã¢â‚¬â€Ã…Â½</div>CMC Vellore</div>
             </div>
-            <div class="td-footer-note" id="questions">Institute names describe where doctors trained. They do not mean the institutes employ, partner with or endorse Top Docs.</div>
+
           </div>
         </section>
 
         <div class="td-assistant-note">Your Top Docs AI assistant</div>
         <a id="assistant" class="td-fab" href="?assistant=1" aria-label="Open MediAgent AI assistant">
           <span class="td-fab-label">Ask MediAgent</span>
-          <span class="td-fab-btn">✦</span>
+          <span class="td-fab-btn">ÃƒÂ¢Ã…â€œÃ‚Â¦</span>
           <span class="td-fab-pulse"></span>
         </a>
         """).replace("__LOGO_SRC__", __TOPDOCS_LOGO_SRC)
@@ -1464,10 +1539,10 @@ else:
     st.markdown(
         f"""
         <div class="page-topbar">
-            <div class="eyebrow">Top Docs · {APP_SUBTITLE}</div>
+            <div class="eyebrow">Top Docs Ãƒâ€šÃ‚Â· {APP_SUBTITLE}</div>
             <div class="top-status">
                 <span style="width:7px;height:7px;border-radius:50%;background:#1aa36a;display:inline-block;"></span>
-                AI workspace · {datetime.now().strftime("%d %b %Y · %I:%M %p")}
+                AI workspace Ãƒâ€šÃ‚Â· {datetime.now().strftime("%d %b %Y Ãƒâ€šÃ‚Â· %I:%M %p")}
             </div>
         </div>
         """,
@@ -1481,7 +1556,7 @@ else:
 if nav != "Top Docs Home":
     c_back, c_space = st.columns([1, 5])
     with c_back:
-        if st.button("← Top Docs", key="back_to_topdocs"):
+        if st.button("â† Top Docs", key="back_to_topdocs"):
             st.session_state["nav_target"] = "Top Docs Home"
             st.rerun()
 
@@ -1500,9 +1575,9 @@ if nav == "Dashboard":
     st.markdown("<div class='section-title'>How the system works</div>", unsafe_allow_html=True)
     c1, c2, c3 = st.columns(3, gap="medium")
     architecture = [
-        (c1, "01", "Supervisor Orchestrator", "Understands the request, classifies intent, and hands it to the right specialist agent.", "⌁"),
-        (c2, "02", "Specialist Agents", "Ten task-focused agents handle triage, doctors, reports, medication info, support, and follow-up.", "✦"),
-        (c3, "03", "Clinical Safety Reviewer", "Checks generated responses for risky diagnosis, dosing, guarantees, and unsafe instructions.", "✓"),
+        (c1, "01", "Supervisor Orchestrator", "Understands the request, classifies intent, and hands it to the right specialist agent.", "âŒ"),
+        (c2, "02", "Specialist Agents", "Ten task-focused agents handle triage, doctors, reports, medication info, support, and follow-up.", "ÃƒÂ¢Ã…â€œÃ‚Â¦"),
+        (c3, "03", "Clinical Safety Reviewer", "Checks generated responses for risky diagnosis, dosing, guarantees, and unsafe instructions.", "ÃƒÂ¢Ã…â€œÃ¢â‚¬Å“"),
     ]
     for col, number, title, desc, icon in architecture:
         with col:
@@ -1524,15 +1599,15 @@ if nav == "Dashboard":
     st.markdown("<div class='section-title'>Available capabilities</div>", unsafe_allow_html=True)
     tasks = [
         ("Emergency Triage", "Urgent escalation and emergency routing", "!"),
-        ("General Patient Assistant", "General healthcare information", "✦"),
-        ("Symptom Triage", "General urgency and specialist guidance", "♥"),
-        ("Doctor Discovery", "Specialty matching and demo directory", "⌕"),
-        ("Appointment Management", "Book, reschedule, and cancel", "◷"),
-        ("Medical Report Analysis", "Summarization and discussion points", "▤"),
+        ("General Patient Assistant", "General healthcare information", "ÃƒÂ¢Ã…â€œÃ‚Â¦"),
+        ("Symptom Triage", "General urgency and specialist guidance", "ÃƒÂ¢Ã¢â€žÂ¢Ã‚Â¥"),
+        ("Doctor Discovery", "Specialty matching and demo directory", "ÃƒÂ¢Ã…â€™Ã¢â‚¬Â¢"),
+        ("Appointment Management", "Book, reschedule, and cancel", "ÃƒÂ¢Ã¢â‚¬â€Ã‚Â·"),
+        ("Medical Report Analysis", "Summarization and discussion points", "ÃƒÂ¢Ã¢â‚¬â€œÃ‚Â¤"),
         ("Medication Information", "General medication safety information", "Rx"),
         ("Patient Education", "Plain-language healthcare explanations", "i"),
-        ("Customer Support", "Issue classification and support tickets", "◇"),
-        ("Follow-up Guidance", "Questions and observations for clinician follow-up", "↻"),
+        ("Customer Support", "Issue classification and support tickets", "ÃƒÂ¢Ã¢â‚¬â€Ã¢â‚¬Â¡"),
+        ("Follow-up Guidance", "Questions and observations for clinician follow-up", "ÃƒÂ¢Ã¢â‚¬Â Ã‚Â»"),
     ]
     for row_start in range(0, len(tasks), 2):
         left, right = st.columns(2, gap="medium")
@@ -1546,7 +1621,7 @@ if nav == "Dashboard":
                         <div style="display:flex;gap:13px;align-items:center;">
                             <div class="card-icon" style="margin:0;flex:0 0 auto;">{icon}</div>
                             <div>
-                                <h3 style="margin-bottom:3px;">{idx+1:02d} · {name}</h3>
+                                <h3 style="margin-bottom:3px;">{idx+1:02d} Ãƒâ€šÃ‚Â· {name}</h3>
                                 <p>{desc}</p>
                             </div>
                         </div>
@@ -1558,7 +1633,7 @@ if nav == "Dashboard":
         """
         <div class="route-card" style="margin-top:8px;">
             <div class="route-title">Quick demo path</div>
-            Open <b>AI Assistant</b> and type a natural-language request such as <i>“I need a cardiologist”</i>, <i>“I want to book an appointment”</i>, or <i>“I have a headache”</i>.
+            Open <b>AI Assistant</b> and type a natural-language request such as <i>ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œI need a cardiologistÃƒÂ¢Ã¢â€šÂ¬Ã‚Â</i>, <i>ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œI want to book an appointmentÃƒÂ¢Ã¢â€šÂ¬Ã‚Â</i>, or <i>ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œI have a headacheÃƒÂ¢Ã¢â€šÂ¬Ã‚Â</i>.
         </div>
         """, unsafe_allow_html=True,
     )
@@ -1582,7 +1657,7 @@ elif nav == "AI Assistant":
         with st.chat_message(msg["role"]):
             st.markdown(msg["content"])
 
-    user_prompt = st.chat_input("Describe what you need help with…")
+    user_prompt = st.chat_input("Describe what you need help withÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦")
 
     if user_prompt and user_prompt.strip():
         user_prompt = user_prompt.strip()
@@ -1594,7 +1669,7 @@ elif nav == "AI Assistant":
             {
                 "role": "assistant",
                 "content": (
-                    f"**Supervisor → {result.agent}**\n\n"
+                    f"**Supervisor Ã¢â€ â€™ {result.agent}**\n\n"
                     f"{result.response}"
                 ),
             }
@@ -1685,7 +1760,7 @@ elif nav == "Appointments":
             st.info("No active appointments to reschedule.")
         else:
             labels = {
-                r["id"]: f"#{r['id']} · {r['patient']} · {r['doctor']} · {r['appointment_date']} · {r['status']}"
+                r["id"]: f"#{r['id']} Ãƒâ€šÃ‚Â· {r['patient']} Ãƒâ€šÃ‚Â· {r['doctor']} Ãƒâ€šÃ‚Â· {r['appointment_date']} Ãƒâ€šÃ‚Â· {r['status']}"
                 for r in rows
             }
             appointment_id = st.selectbox(
@@ -1709,7 +1784,7 @@ elif nav == "Appointments":
             st.info("No active appointments to cancel.")
         else:
             labels = {
-                r["id"]: f"#{r['id']} · {r['patient']} · {r['doctor']} · {r['appointment_date']} · {r['status']}"
+                r["id"]: f"#{r['id']} Ãƒâ€šÃ‚Â· {r['patient']} Ãƒâ€šÃ‚Â· {r['doctor']} Ãƒâ€šÃ‚Â· {r['appointment_date']} Ãƒâ€šÃ‚Â· {r['status']}"
                 for r in rows
             }
             appointment_id = st.selectbox(
@@ -1750,39 +1825,74 @@ elif nav == "Medical Reports":
     show_last_route("Medical Reports")
 
     title = st.text_input("Report title", value="Medical Report")
+
     uploaded = st.file_uploader(
-        "Upload a TXT or PDF report",
+        "Upload a TXT or PDF report (maximum 10 MB)",
         type=["txt", "pdf"],
+        max_upload_size=10,
     )
+
+
+    MAX_REPORT_CHARS = 12000
 
     report_text = st.text_area(
         "Or paste report text here",
         height=250,
-        placeholder="Paste the report content…",
+        placeholder="Paste the report content...",
     )
 
     if uploaded is not None:
         try:
             if uploaded.name.lower().endswith(".txt"):
-                report_text = uploaded.getvalue().decode("utf-8", errors="ignore")
+                report_text = uploaded.getvalue().decode(
+                    "utf-8", errors="replace"
+                )
                 st.caption(f"Loaded {uploaded.name}")
+
             elif uploaded.name.lower().endswith(".pdf"):
                 if PdfReader is None:
-                    st.error("PDF support requires pypdf. Run: pip install pypdf")
+                    st.error(
+                        "PDF support requires pypdf. "
+                        "Run: pip install pypdf"
+                    )
+                    report_text = ""
                 else:
                     reader = PdfReader(BytesIO(uploaded.getvalue()))
                     report_text = "\n".join(
-                        page.extract_text() or "" for page in reader.pages
+                        page.extract_text() or ""
+                        for page in reader.pages
                     )
                     st.caption(f"Extracted text from {uploaded.name}")
-        except Exception as exc:
-            st.error(f"Could not read the file: {exc}")
+
+            if len(report_text) > MAX_REPORT_CHARS:
+                st.warning(
+                    "The report exceeds 12,000 characters. "
+                    "Only the first 12,000 characters will be analyzed."
+                )
+                report_text = report_text[:MAX_REPORT_CHARS]
+
+        except Exception:
+            report_text = ""
+            st.error(
+                "Could not read this file. Check that it is a valid "
+                "TXT or PDF report and try again."
+            )
 
     if st.button("Analyze & summarize report", type="primary"):
         if not report_text.strip():
             st.warning("Upload a report or paste its text before analyzing.")
         else:
-            result = SUPERVISOR.report.run(report_text, title.strip() or "Medical Report")
+            if len(report_text) > MAX_REPORT_CHARS:
+                st.warning(
+                    "The report exceeds 12,000 characters. "
+                    "Only the first 12,000 characters will be analyzed."
+                )
+                report_text = report_text[:MAX_REPORT_CHARS]
+
+            result = SUPERVISOR.report.run(
+                report_text,
+                title.strip() or "Medical Report",
+            )
             st.session_state["report_result"] = result.as_dict()
 
     if "report_result" in st.session_state:
@@ -1805,7 +1915,7 @@ elif nav == "Medical Reports":
 elif nav == "Medication Info":
     hero(
         "Medication Information",
-        "General medication information with explicit safety boundaries—no prescribing or dosage decisions.",
+        "General medication information with explicit safety boundariesÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Âno prescribing or dosage decisions.",
     )
 
     show_last_route("Medication Info")
@@ -1836,7 +1946,7 @@ elif nav == "Medication Info":
 elif nav == "Symptom Triage":
     hero(
         "Symptom Triage",
-        "General urgency guidance—not a diagnosis.",
+        "General urgency guidanceÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Ânot a diagnosis.",
     )
 
     show_last_route("Symptom Triage")
@@ -1912,7 +2022,7 @@ elif nav == "Support":
         patient = st.text_input("Your name")
         issue = st.text_area(
             "Describe your issue",
-            placeholder="Payment, refund, account, appointment or website issue…",
+            placeholder="Payment, refund, account, appointment or website issueÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦",
         )
         submitted = st.form_submit_button("Create support ticket", type="primary")
 
@@ -1981,6 +2091,6 @@ elif nav == "Follow-up":
 
 st.divider()
 st.caption(
-    f"{APP_TITLE} · {DEMO_DISCLAIMER} · "
-    f"LLM: {LLM_PROVIDER}/{GROQ_MODEL if LLM_PROVIDER == "groq" else OLLAMA_MODEL} · Database: {DB_PATH}"
+    f"{APP_TITLE} Ãƒâ€šÃ‚Â· {DEMO_DISCLAIMER} Ãƒâ€šÃ‚Â· "
+    f"LLM: {LLM_PROVIDER}/{GROQ_MODEL if LLM_PROVIDER == "groq" else OLLAMA_MODEL} Ãƒâ€šÃ‚Â· Database: {DB_PATH}"
 )
